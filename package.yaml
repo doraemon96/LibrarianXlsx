@@ -32,14 +32,15 @@ dependencies:
 - parsec
 - ansi-terminal
 - containers
+- parsec3-numbers
 
 library:
   source-dirs: src
 
 executables:
   LibrarianXlsx-exe:
-    main:                LibrarianXlsx.hs
-    source-dirs:         src
+    main:                Main.hs
+    source-dirs:         app
     ghc-options:
     - -threaded
     - -rtsopts

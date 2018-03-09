@@ -13,7 +13,8 @@ module XlsxWrappers ( tryReadXlsx
                     , filterSheet
                     , toXlsxText
                     , toXlsxDouble
-                    , toXlsxBool) where
+                    , toXlsxBool
+                    , getLastRow) where
 import Codec.Xlsx
 import Control.Lens
 import qualified Data.ByteString as BS
@@ -147,3 +148,8 @@ normalizeRows' :: Int -> [(Int, [(Int, Cell)])] -> [(Int, [(Int, Cell)])]
 normalizeRows' _ []     = []
 normalizeRows' i (x:xs) = (i,cs) : (normalizeRows' (i+1) xs)
                             where (_,cs) = x
+
+getLastRow :: Xlsx -> XlsxSheet -> Int
+getLastRow db sheet = let map = db ^. (ixSheet (T.pack sheet)) . wsCells
+                      in maybe 0 (fst . fst) (C.lookupMax map)
+
