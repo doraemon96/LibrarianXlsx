@@ -2,7 +2,7 @@
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 6d94e428328410b294906c65bacb230b1834cb2359033e73a0f70d5c3d8ee939
+-- hash: d2553be5e1a8fe3e828bea4570db682b35112f275d357d85542694829f11397d
 
 name:           LibrarianXlsx
 version:        0.1.0.0
@@ -67,9 +67,8 @@ executable LibrarianXlsx-exe
     , transformers
     , xlsx
   other-modules:
-      XlsxQueryDSL
-      XlsxTypes
-      XlsxWrappers
+      MiniSQL
+      XlsxMSQL
       Paths_LibrarianXlsx
   default-language: Haskell2010
 

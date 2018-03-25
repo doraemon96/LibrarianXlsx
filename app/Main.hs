@@ -10,16 +10,15 @@ import Text.ParserCombinators.Parsec.Language
 import Text.ParserCombinators.Parsec.Token
 import Text.Parsec.Number
 -- Xlsx Imports
-import Codec.Xlsx.Types
-import qualified XlsxQueryDSL as XQ
-import qualified XlsxWrappers as XW
-import XlsxTypes
+import qualified MiniSQL as MS
+import qualified XlsxMSQL as XS
 -- Other Imports
 import Foreign.Marshal.Error
 import Control.Monad.State
+import Control.Monad.Except
 
 
-version = "0.7.3"
+version = "0.8.1"
 
 p_ps f = "LibXlsx<" ++ f ++ ">$ "
 p_help = "help"
@@ -32,17 +31,17 @@ main = do setCursorPosition 0 0
           putStrLn $ "## Librarian Xlsx ## (Version " ++ version ++ ")"
           putStrLn $ "## For help type \"" ++ p_help ++ "\" ##"
           putStrLn $ ""
-          readevalprint $ XlsxState "default.xlsx" def
+          readevalprint $ XS.defxlsxs
 
-readevalprint :: XlsxState -> IO ()
-readevalprint st = do r <- readline $ p_ps (dbpath st)
+readevalprint :: XS.XlsxState -> IO ()
+readevalprint st = do r <- readline $ p_ps (XS.path st)
                       case r of
                          Nothing -> putStrLn ""
-                         Just "showme" -> do putStrLn (show (dbxlsx st))
+                         Just "showme" -> do putStrLn (show (XS.xlsx st))
                                              readevalprint st
                          Just s  -> case parseCmd s of
                                        Right cmd -> runCmd st cmd
-                                       Left err  -> do putStrLn ""
+                                       Left err  -> do putStrLn "(Command not supported / Parsing error)"
                                                        readevalprint st
                                            
 runHelp :: IO ()
@@ -76,24 +75,32 @@ data Command = Help String
              | LoadFile String 
              | WriteFile
              | CreateFile String 
-             | RunQuery XQ.QueryDSL 
+             | RunQuery MS.QueryDSL 
              | Quit deriving (Show)
 
-runCmd :: XlsxState -> Command -> IO ()
-runCmd st (Help "query") = do{runHelpQuery; readevalprint st}
-runCmd st (Help "cond")  = do{runHelpCond; readevalprint st}
-runCmd st (LoadFile f)   = do mxlsx <- XW.tryReadXlsx f
-                              maybe (readevalprint st) (\x -> readevalprint (st {dbpath = f, dbxlsx = x})) mxlsx
-runCmd st (WriteFile)    = do putStrLn $ "## Writing " ++ (dbpath st) ++ " ##"
-                              XW.tryWriteXlsx (dbpath st) (dbxlsx st)
-                              readevalprint st
-runCmd st (CreateFile f) = do{XW.createXlsxU f; readevalprint (st {dbpath = f})}
-runCmd st (RunQuery q)   = let (r,st') = runState (XQ.evalQueryDsl q) st
-                           in case r of
-                                [] -> readevalprint st'
-                                xs -> do{ putStrLn (show xs); readevalprint st'}
-runCmd st (Quit)         = do{putStrLn "## Closing LibrarianXlsx ##"; return ()}
+runCmd :: XS.XlsxState -> Command -> IO ()
+runCmd st (Help "query") = runHelpQuery >> readevalprint st
+runCmd st (Help "cond")  = runHelpCond >> readevalprint st
+runCmd st (LoadFile f)   = do e <- MS.runMonadSQL (MS.tryRead f) st
+                              case e of
+                                  Left err      -> putStrLn (show err) >> readevalprint st
+                                  Right (_,st') -> readevalprint st'
+runCmd st (WriteFile)    = do e <- MS.runMonadSQL_ (MS.tryWrite) st
+                              case e of
+                                  Left err -> putStrLn (show err) >> readevalprint st
+                                  Right _  -> readevalprint st
+runCmd st (CreateFile f) = do e <- MS.runMonadSQL (MS.createFile f) st
+                              case e of
+                                  Left err -> putStrLn (show err) >> readevalprint st
+                                  Right (_,st') -> readevalprint st'
+runCmd st (RunQuery q)   = do e <- MS.runMonadSQL (MS.evalQuery q) st
+                              case e of
+                                  Left err       -> putStrLn (show err) >> readevalprint st
+                                  Right (mv,st') -> maybe (readevalprint st') (\x -> putStrLn (show x) >> readevalprint st') mv
+runCmd st (Quit)         = putStrLn "## Closing LibriarianXlsx ##" >> return ()
 runCmd st _              = do{runHelp; readevalprint st}
+
+
 
 -- parseCmd
 --   Parser for the console (and to create queries)
@@ -170,42 +177,42 @@ quitC :: Parser Command
 quitC = do (reserved lis) "quit"
            return $ Quit
 
-query :: Parser XQ.QueryDSL
+query :: Parser MS.QueryDSL
 query = createQ
          <|> try dropQ
          <|> insertQ
          <|> deleteQ
          <|> selectQ
 
-createQ :: Parser XQ.QueryDSL
+createQ :: Parser MS.QueryDSL
 createQ = do (reserved lis) "CREATE"
              t  <- tablename
              cs <- columns
-             return $ XQ.CREATE t cs
+             return $ MS.CREATE t cs
 
-dropQ :: Parser XQ.QueryDSL
+dropQ :: Parser MS.QueryDSL
 dropQ = do (reserved lis) "DROP"
            t  <- tablename
-           return $ XQ.DROP t
+           return $ MS.DROP t
 
-insertQ :: Parser XQ.QueryDSL
+insertQ :: Parser MS.QueryDSL
 insertQ = do (reserved lis) "INSERT"
              t  <- tablename
              whiteSpace lis
              vs <- values
-             return $ XQ.INSERT t vs
+             return $ MS.INSERT t vs
 
-deleteQ :: Parser XQ.QueryDSL
+deleteQ :: Parser MS.QueryDSL
 deleteQ = do (reserved lis) "DELETE"
              t  <- tablename
              c  <- condition
-             return $ XQ.DELETE t c
+             return $ MS.DELETE t c
 
-selectQ :: Parser XQ.QueryDSL
+selectQ :: Parser MS.QueryDSL
 selectQ = do (reserved lis) "SELECT"
              t  <- tablename
              c  <- condition
-             return $ XQ.SELECT t c
+             return $ MS.SELECT t c
 
 tablename :: Parser String
 tablename = do t <- identifier lis
@@ -215,29 +222,29 @@ columns :: Parser [String]
 columns = do string "("
              manyTill (identifier lis) (try (string ")"))
 
-condition :: Parser XQ.ConditionDSL
+condition :: Parser MS.ConditionDSL
 condition = do (reserved lis) "WHERE"
                c  <- identifier lis
                op <- conditionop
                v  <- value
-               return $ XQ.WHERE c op v
-            <|> return XQ.NILC
+               return $ MS.WHERE c op v
+            <|> return MS.NILC
 
-conditionop :: Parser XQ.OperatorDSL
-conditionop = do{(reservedOp lis) "="; return XQ.EQO}
-            <|> do{(reservedOp lis) "<"; return XQ.LTO}
-            <|> do{(reservedOp lis) ">"; return XQ.GTO}
+conditionop :: Parser MS.OperatorDSL
+conditionop = do{(reservedOp lis) "="; return MS.EQO}
+            <|> do{(reservedOp lis) "<"; return MS.LTO}
+            <|> do{(reservedOp lis) ">"; return MS.GTO}
 
-value :: Parser XQ.Value
-value = try (do string "True" ; return $ XQ.BOOL True)
-        <|> try (do string "False" ; return $ XQ.BOOL False)
+value :: Parser MS.Value
+value = try (do string "True" ; return $ MS.BOOL True)
+        <|> try (do string "False" ; return $ MS.BOOL False)
         <|> try (do f <- floating ;
-                    return $ XQ.DOUBLE f)
+                    return $ MS.DOUBLE f)
         <|> try (do i <- int;
-                    return $ XQ.DOUBLE (fromIntegral i))
+                    return $ MS.DOUBLE (fromIntegral i))
         <|> do i <- identifier lis
-               return $ XQ.TEXT i
+               return $ MS.TEXT i
 
-values :: Parser [XQ.Value]
+values :: Parser [MS.Value]
 values = do string "("
             manyTill (whiteSpace lis >> value) (try (string ")"))
