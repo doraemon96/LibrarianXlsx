@@ -18,7 +18,7 @@ import Control.Monad.State
 import Control.Monad.Except
 
 
-version = "0.8.1"
+version = "0.8.2"
 
 p_ps f = "LibXlsx<" ++ f ++ ">$ "
 p_help = "help"
@@ -61,8 +61,8 @@ runHelpQuery = do putStrLn ""
                   putStrLn "    CREATE table_name (col1 col2 ...)"
                   putStrLn "    DROP table_name"
                   putStrLn "    INSERT table_name (data1 data2 ...)"
-                  putStrLn "    DELETE table_name (cond1 AND/OR cond2 AND/OR ...)"
-                  putStrLn "    SELECT table_name (cond1 AND/OR cond2 AND/OR ...)"
+                  putStrLn "    DELETE table_name cond"
+                  putStrLn "    SELECT table_name cond"
                   putStrLn "    "
 
 runHelpCond :: IO ()
@@ -164,9 +164,9 @@ creaC = do (reserved lis) "crea"
            try (do{ fi <- identifier lis ;
                     dot lis;
                     fe <- identifier lis ;
-                    return $ LoadFile (fi++"."++fe)})
+                    return $ CreateFile (fi++"."++fe)})
            <|> (do{ f <- identifier lis ;
-                    return $ LoadFile f})
+                    return $ CreateFile f})
 
 runqC :: Parser Command
 runqC = do (reserved lis) "runq"
